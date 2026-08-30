@@ -25,6 +25,21 @@ function makeAudioContext(): AudioContext {
   return new Ctx();
 }
 
+// 创建「分析抽头」：MediaStreamSource -> Analyser -> 静音 Gain -> destination
+// 关键：移动端 Safari 中 AnalyserNode 若不连到 destination，音频图不会被驱动，
+// getByteTimeDomainData 永远返回静音，导致说话特效不亮。静音 gain 仅用于驱动分析、不产生可闻输出。
+function tapAnalyser(ctx: AudioContext, stream: MediaStream): AnalyserNode {
+  const src = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  const sink = ctx.createGain();
+  sink.gain.value = 0; // 静音，仅驱动分析图
+  src.connect(analyser);
+  analyser.connect(sink);
+  sink.connect(ctx.destination);
+  return analyser;
+}
+
 type RemoteEntry = {
   audio: HTMLAudioElement;
   analyser: AnalyserNode;
@@ -144,10 +159,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       const ctx = audioCtxRef.current ?? makeAudioContext();
       audioCtxRef.current = ctx;
       ctx.resume?.(); // 移动端自动播放策略下需恢复 AudioContext，否则分析/播放无数据
-      const src = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 512;
-      src.connect(analyser);
+      const analyser = tapAnalyser(ctx, stream); // 连到 destination 驱动分析图（移动端必需）
       entry = { audio, analyser, raf: 0, lastSpeaking: false };
       remote.current.set(peerId, entry);
     }
@@ -308,14 +320,10 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
           localStream.current = stream;
           addMember({ id: myId, name: nickname, host: isHostRef.current, isSelf: true, mute: false, speaking: false });
-          const ctx = makeAudioContext();
+          const ctx = audioCtxRef.current ?? makeAudioContext(); // 复用同一个 AudioContext（远端已建则复用）
           audioCtxRef.current = ctx;
           ctx.resume?.(); // 移动端需恢复 AudioContext，否则本地说话检测拿不到数据
-          const src = ctx.createMediaStreamSource(stream);
-          const analyser = ctx.createAnalyser();
-          analyser.fftSize = 512;
-          src.connect(analyser);
-          localAnalyser.current = analyser;
+          localAnalyser.current = tapAnalyser(ctx, stream); // 连到 destination 驱动分析图（移动端必需）
           // 若已有连接但当时没有本地轨道，补加轨道会触发 onnegotiationneeded 自动重新协商
           pcs.current.forEach((pc) => ensureLocalTracks(pc));
           startLocalSpeaking();
