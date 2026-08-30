@@ -52,6 +52,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const pingTimer = useRef<number>(0);
   const selfClosed = useRef(false); // 主动离开时置位，避免 onclose 误报断线
   const kickedRef = useRef(false); // 已被房主踢出时置位，避免 onclose 覆盖提示文案
+  const rejectedRef = useRef(false); // 服务端拒绝进房(locked/room-not-found)时置位，避免 onclose 覆盖专属提示
 
   const micOnRef = useRef(true);
   const soundOnRef = useRef(true);
@@ -152,8 +153,8 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     wsRef.current = ws;
 
     ws.onclose = () => {
-      // cleanup（含 React StrictMode 双调用 / 主动离开 / 被踢）关闭的连接不算断网
-      if (!active || selfClosed.current || kickedRef.current) return;
+      // cleanup（含 React StrictMode 双调用 / 主动离开 / 被踢 / 服务端拒绝进房）关闭的连接不算断网
+      if (!active || selfClosed.current || kickedRef.current || rejectedRef.current) return;
       setError('已与房间断开连接，请返回大厅');
     };
 
@@ -173,6 +174,8 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       switch (m.t) {
         case 'roster':
           for (const mem of m.members as Member[]) addMember({ ...mem, isSelf: false, mute: false, speaking: false });
+          // 进房成功后再申请麦克风，避免加入被拒(锁房/房间不存在)时仍打开麦克风
+          startLocalMedia();
           break;
         case 'peer-join':
           addMember({ id: m.id, name: m.name, host: m.host, isSelf: false, mute: false, speaking: false });
@@ -213,10 +216,12 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           setError('房间已满（最多 6 人）');
           break;
         case 'room-not-found':
+          rejectedRef.current = true;
           setError('该房间不存在，请重新输入');
           break;
         case 'locked':
-          setError('房间已锁定，无法进入');
+          rejectedRef.current = true;
+          setError('该房间已上锁');
           break;
         case 'kicked':
           kickedRef.current = true;
@@ -230,31 +235,35 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       }
     };
 
-    navigator.mediaDevices
-      .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-      .then((stream) => {
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        localStream.current = stream;
-        addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: false, speaking: false });
-        const ctx = makeAudioContext();
-        audioCtxRef.current = ctx;
-        const src = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 512;
-        src.connect(analyser);
-        localAnalyser.current = analyser;
-        // 若已有连接但当时没有本地轨道，补发并重新协商
-        pcs.current.forEach((pc, peerId) => {
-          if (ensureLocalTracks(pc)) {
-            pc.createOffer()
-              .then((offer) => pc.setLocalDescription(offer).then(() => send({ t: 'offer', to: peerId, from: myId, sdp: offer })));
-          }
+    // 仅在进房成功(收到 roster)后调用：申请麦克风并把自己加入成员列表
+    const startLocalMedia = () => {
+      if (cancelled) return;
+      navigator.mediaDevices
+        .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
+        .then((stream) => {
+          if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+          localStream.current = stream;
+          addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: false, speaking: false });
+          const ctx = makeAudioContext();
+          audioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          src.connect(analyser);
+          localAnalyser.current = analyser;
+          // 若已有连接但当时没有本地轨道，补发并重新协商
+          pcs.current.forEach((pc, peerId) => {
+            if (ensureLocalTracks(pc)) {
+              pc.createOffer()
+                .then((offer) => pc.setLocalDescription(offer).then(() => send({ t: 'offer', to: peerId, from: myId, sdp: offer })));
+            }
+          });
+          startLocalSpeaking();
+        })
+        .catch(() => {
+          if (!cancelled) addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: true, speaking: false });
         });
-        startLocalSpeaking();
-      })
-      .catch(() => {
-        if (!cancelled) addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: true, speaking: false });
-      });
+    };
 
     return () => {
       active = false;

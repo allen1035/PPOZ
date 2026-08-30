@@ -71,6 +71,21 @@ test('房主踢人：被踢者收到 kicked，房间其他人收到 peer-leave',
   member.close();
 }, 10000);
 
+test('成员加入已上锁房间：收到 locked', async () => {
+  const host = await connect();
+  send(host, { t: 'join', room: 'LOCKTEST', id: 'h', name: 'H', host: true });
+  await waitFor(host, 'roster');
+  send(host, { t: 'lock', locked: true });
+
+  const member = await connect();
+  const p = waitFor(member, 'locked');
+  send(member, { t: 'join', room: 'LOCKTEST', id: 'm', name: 'M', host: false });
+  const locked = await p;
+  expect(locked.t).toBe('locked');
+  host.close();
+  member.close();
+}, 10000);
+
 test('成员加入不存在的房间：收到 room-not-found', async () => {
   const member = await connect();
   const p = waitFor(member, 'room-not-found');
