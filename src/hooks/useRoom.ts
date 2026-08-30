@@ -1,9 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Msg, Member } from '../lib/protocol';
 
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
-};
+const TURN_URL = import.meta.env.VITE_TURN_URL as string | undefined;
+const TURN_USER = import.meta.env.VITE_TURN_USER as string | undefined;
+const TURN_CRED = import.meta.env.VITE_TURN_CRED as string | undefined;
+
+// 默认使用 Metered 提供的免费公共测试 TURN，保证跨网络 / 隔离 WiFi 下也能中继语音（朋友无需装任何软件）。
+// 长期使用请到 metered.ca 注册免费额度（1GB/月），把自己的 TURN 凭据填入上面的 VITE_TURN_* 环境变量。
+function buildIceServers(): RTCIceServer[] {
+  const servers: RTCIceServer[] = [{ urls: 'stun:stun.l.google.com:19302' }];
+  if (TURN_URL) {
+    servers.push({ urls: TURN_URL, username: TURN_USER, credential: TURN_CRED });
+  } else {
+    const cred = { username: 'openrelayproject', credential: 'openrelayproject' };
+    servers.push({ urls: 'turn:openrelay.metered.ca:80', ...cred });
+    servers.push({ urls: 'turn:openrelay.metered.ca:443', ...cred });
+    servers.push({ urls: 'turn:openrelay.metered.ca:3478', ...cred });
+  }
+  return servers;
+}
+
+const RTC_CONFIG: RTCConfiguration = { iceServers: buildIceServers() };
 
 export type MemberView = {
   id: string;
@@ -128,9 +145,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       syncConn();
       console.log('[ppoz] 连接', peerId, '->', pc.connectionState);
       if (pc.connectionState === 'failed') {
-        setError(
-          `与一位成员的 P2P 连接失败（多为 WiFi 客户端隔离 / 对称型 NAT 限制）。可先用同一台电脑开两个标签页自测；真异地请用 ZeroTier/Tailscale 免费组网，详见 DEPLOY.md`,
-        );
+        setError('与一位成员的连接失败（已尝试 TURN 中继仍不通，多为网络限制）。请检查网络或稍后重试。');
       }
     };
     pc.oniceconnectionstatechange = () => {
