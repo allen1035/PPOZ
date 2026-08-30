@@ -30,7 +30,7 @@ function broadcast(room: string, m: Msg, exceptId?: string): void {
   for (const c of r.members.values()) if (c.id !== exceptId) send(c.ws, m);
 }
 
-const wss = new WebSocketServer({ port: PORT });
+export const wss = new WebSocketServer({ port: PORT });
 wss.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(
@@ -107,6 +107,9 @@ wss.on('connection', (ws: WebSocket) => {
         const victim = rooms.get(room)?.members.get(m.target);
         if (!victim) return;
         rooms.get(room)!.members.delete(m.target);
+        // 先告知被踢者（在其连接关闭前），让客户端显示明确提示并返回大厅
+        send(victim.ws, { t: 'kicked' });
+        // 再广播给房间内其他人，移除其磁贴
         broadcast(room, { t: 'peer-leave', id: m.target });
         victim.ws.close();
         break;

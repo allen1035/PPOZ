@@ -1,0 +1,72 @@
+import { afterAll, beforeAll, expect, test } from 'vitest';
+import { WebSocket, type WebSocketServer } from 'ws';
+import type { Msg } from '../src/lib/protocol';
+
+const PORT = 8799;
+process.env.PORT = String(PORT);
+const URL = `ws://localhost:${PORT}`;
+
+let wss: WebSocketServer;
+
+beforeAll(async () => {
+  const mod = await import('../server/signaling');
+  wss = mod.wss;
+  // 等待服务完成监听
+  await new Promise((r) => setTimeout(r, 400));
+});
+
+afterAll(() => {
+  wss?.close();
+});
+
+function connect(): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(URL);
+    ws.on('open', () => resolve(ws));
+    ws.on('error', reject);
+  });
+}
+
+function send(ws: WebSocket, m: Msg): void {
+  ws.send(JSON.stringify(m));
+}
+
+function waitFor(ws: WebSocket, type: Msg['t']): Promise<Msg> {
+  return new Promise((resolve) => {
+    const handler = (raw: Buffer | string) => {
+      const m = JSON.parse(raw.toString()) as Msg;
+      if (m.t === type) {
+        ws.off('message', handler);
+        resolve(m);
+      }
+    };
+    ws.on('message', handler);
+  });
+}
+
+test('房主踢人：被踢者收到 kicked，房间其他人收到 peer-leave', async () => {
+  const host = await connect();
+  send(host, { t: 'join', room: 'KICKTEST', id: 'host', name: 'H', host: true });
+
+  const member = await connect();
+  send(member, { t: 'join', room: 'KICKTEST', id: 'mem', name: 'M', host: false });
+
+  // 先挂好监听，再触发踢人
+  const joinP = waitFor(host, 'peer-join');
+  const kickedP = waitFor(member, 'kicked');
+  const leaveP = waitFor(host, 'peer-leave');
+
+  send(host, { t: 'kick', target: 'mem' });
+
+  const kicked = await kickedP;
+  expect(kicked.t).toBe('kicked');
+
+  const join = await joinP;
+  expect(join.t === 'peer-join' && join.id).toBe('mem');
+
+  const leave = await leaveP;
+  expect(leave.t === 'peer-leave' && leave.id).toBe('mem');
+
+  host.close();
+  member.close();
+}, 10000);

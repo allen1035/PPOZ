@@ -50,6 +50,8 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const memberState = useRef<Map<string, MemberView>>(new Map());
   const audioCtxRef = useRef<AudioContext | null>(null);
   const pingTimer = useRef<number>(0);
+  const selfClosed = useRef(false); // 主动离开时置位，避免 onclose 误报断线
+  const kickedRef = useRef(false); // 已被房主踢出时置位，避免 onclose 覆盖提示文案
 
   const micOnRef = useRef(true);
   const soundOnRef = useRef(true);
@@ -143,9 +145,16 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
 
   useEffect(() => {
     let cancelled = false;
-    const url = wsUrl ?? `ws://${location.hostname}:8787`;
+    const envUrl = import.meta.env.VITE_SIGNALING_URL as string | undefined;
+    const url = wsUrl ?? envUrl ?? `ws://${location.hostname}:8787`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
+
+    ws.onclose = () => {
+      // 主动离开或被踢都已通过各自路径提示，无需再弹断线错误
+      if (selfClosed.current || kickedRef.current) return;
+      setError('已与房间断开连接，请返回大厅');
+    };
 
     ws.onopen = () => {
       send({ t: 'join', room: roomCode, id: myId, name: nickname, host: isHost });
@@ -204,6 +213,10 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           break;
         case 'locked':
           setError('房间已锁定，无法进入');
+          break;
+        case 'kicked':
+          kickedRef.current = true;
+          setError('你已被房主移出房间');
           break;
         case 'pong':
           setPing(Date.now() - m.ts);
@@ -276,7 +289,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     send({ t: 'lock', locked: next });
   }, [locked]);
 
-  const leave = useCallback(() => { wsRef.current?.close(); }, []);
+  const leave = useCallback(() => { selfClosed.current = true; wsRef.current?.close(); }, []);
 
   return { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave, isHost };
 }

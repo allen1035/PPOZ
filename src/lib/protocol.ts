@@ -16,6 +16,7 @@ export type Msg =
   | { t: 'lock'; locked: boolean } // 房主锁房/解锁
   | { t: 'room-full' }
   | { t: 'locked' }
+  | { t: 'kicked' } // 仅发给被踢者，客户端据此提示并返回大厅
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number };
 
