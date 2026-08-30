@@ -40,6 +40,10 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const [locked, setLocked] = useState(false);
   const [ping, setPing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 每个对等连接的连接状态，用于 UI 指示灯与排障
+  const [connStates, setConnStates] = useState<Record<string, string>>({});
+  const connRef = useRef<Record<string, string>>({});
+  const syncConn = () => setConnStates({ ...connRef.current });
   // 房主身份可因「房主退出转移」而变更，故用内部状态而非仅读入参
   const [isHostState, setIsHost] = useState(isHost);
   const isHostRef = useRef(isHost);
@@ -104,6 +108,19 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       }
     };
     pc.ontrack = (e) => attachRemote(peerId, e.streams[0]);
+    pc.onconnectionstatechange = () => {
+      connRef.current[peerId] = pc.connectionState;
+      syncConn();
+      console.log('[ppoz] 连接', peerId, '->', pc.connectionState);
+      if (pc.connectionState === 'failed') {
+        setError(
+          `与一位成员的 P2P 连接失败（多为 WiFi 客户端隔离 / 对称型 NAT 限制）。可先用同一台电脑开两个标签页自测；真异地请用 ZeroTier/Tailscale 免费组网，详见 DEPLOY.md`,
+        );
+      }
+    };
+    pc.oniceconnectionstatechange = () => {
+      console.log('[ppoz] ICE', peerId, '->', pc.iceConnectionState);
+    };
     pcs.current.set(peerId, pc);
     return pc;
   };
@@ -136,6 +153,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     }
     entry.audio.srcObject = stream;
     entry.audio.muted = !soundOnRef.current;
+    entry.audio.volume = 1;
     entry.audio.play().catch(() => {});
     const data = new Uint8Array(entry.analyser.fftSize);
     const loop = () => {
@@ -325,6 +343,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   }, []);
 
   const toggleMic = useCallback(() => {
+    audioCtxRef.current?.resume?.(); // 移动端：点按是用户手势，趁机恢复音频上下文
     const next = !micOnRef.current;
     setMicOn(next);
     micOnRef.current = next;
@@ -334,6 +353,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   }, []);
 
   const toggleSound = useCallback(() => {
+    audioCtxRef.current?.resume?.();
     const next = !soundOnRef.current;
     setSoundOn(next);
     soundOnRef.current = next;
@@ -349,5 +369,5 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
 
   const leave = useCallback(() => { selfClosed.current = true; wsRef.current?.close(); }, []);
 
-  return { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave, isHost: isHostState };
+  return { members, micOn, soundOn, locked, ping, error, connStates, toggleMic, toggleSound, kick, toggleLock, leave, isHost: isHostState };
 }

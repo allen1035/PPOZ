@@ -141,6 +141,13 @@ body {
 .tag.host { background: rgba(79, 140, 255, 0.18); color: var(--accent); }
 .tag.self { background: rgba(99, 153, 34, 0.18); color: var(--ok); }
 .tag.muted { background: rgba(226, 75, 74, 0.18); color: var(--danger); }
+.tag.conn { display: inline-flex; align-items: center; gap: 4px; }
+.tag.conn::before {
+  content: ''; width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+.conn-connected::before { background: var(--ok); }
+.conn-connecting::before, .conn-new::before { background: #e2b04a; }
+.conn-failed::before, .conn-closed::before, .conn-disconnected::before { background: var(--danger); }
 
 .kick-btn {
   position: absolute; top: 8px; right: 8px;
