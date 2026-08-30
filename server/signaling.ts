@@ -50,7 +50,7 @@ server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(
       `[ppoz] 端口 ${PORT} 已被占用（可能已有另一个 PPOZ 信令服务在运行）。\n` +
-        `        请先关闭占用该端口的进程，或换个端口：PORT=9000 npm run server`,
+        `        请先关闭占用该端口的进程，或换个端口：PORT=9000 npm start`,
     );
     process.exit(1);
   }

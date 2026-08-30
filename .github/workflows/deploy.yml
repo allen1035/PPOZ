@@ -1,0 +1,43 @@
+name: Deploy PPOZ frontend
+
+# 推送到 master 即自动构建并发布到 GitHub Pages（免费、自带 HTTPS）
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      # 构建时把信令地址注入前端（来自仓库 Variable，见 DEPLOY.md 第 3 步）
+      - run: npm run build
+        env:
+          VITE_SIGNALING_URL: ${{ vars.VITE_SIGNALING_URL }}
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
