@@ -47,6 +47,8 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const wsRef = useRef<WebSocket | null>(null);
   const pcs = useRef<Map<string, RTCPeerConnection>>(new Map());
   const remote = useRef<Map<string, RemoteEntry>>(new Map());
+  // 每个对等连接的协商元数据：perfect negotiation 需要 per-PC 的 makingOffer / polite 状态
+  const pcMeta = useRef<Map<string, { makingOffer: boolean; polite: boolean }>>(new Map());
   const localStream = useRef<MediaStream | null>(null);
   const localAnalyser = useRef<AnalyserNode | null>(null);
   const localRaf = useRef<number>(0);
@@ -83,9 +85,23 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
 
   const makePc = (peerId: string): RTCPeerConnection => {
     const pc = new RTCPeerConnection(RTC_CONFIG);
-    ensureLocalTracks(pc);
+    const meta = { makingOffer: false, polite: myId > peerId }; // id 大的一方为无礼方，丢弃冲突 offer
+    pcMeta.current.set(peerId, meta);
+    ensureLocalTracks(pc); // 若本地轨道已就绪，会触发下方 onnegotiationneeded 自动发 offer
     pc.onicecandidate = (e) => {
       if (e.candidate) send({ t: 'ice', to: peerId, from: myId, cand: e.candidate.toJSON() });
+    };
+    pc.onnegotiationneeded = async () => {
+      // 浏览器在 addTrack / 状态变更时自动调用；用 makingOffer 标志配合对端 polite 处理 glare
+      try {
+        meta.makingOffer = true;
+        await pc.setLocalDescription();
+        send({ t: 'offer', to: peerId, from: myId, sdp: pc.localDescription! });
+      } catch {
+        /* 协商被对端（礼貌方）回滚时忽略 */
+      } finally {
+        meta.makingOffer = false;
+      }
     };
     pc.ontrack = (e) => attachRemote(peerId, e.streams[0]);
     pcs.current.set(peerId, pc);
@@ -95,6 +111,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const closePc = (id: string) => {
     const pc = pcs.current.get(id);
     if (pc) { pc.close(); pcs.current.delete(id); }
+    pcMeta.current.delete(id);
     const e = remote.current.get(id);
     if (e) { cancelAnimationFrame(e.raf); e.audio.srcObject = null; remote.current.delete(id); }
   };
@@ -104,8 +121,12 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     if (!entry) {
       const audio = new Audio();
       audio.autoplay = true;
+      // iOS Safari 要求 playsinline 才能以编程方式播放
+      audio.setAttribute('playsinline', '');
+      audio.setAttribute('webkit-playsinline', '');
       const ctx = audioCtxRef.current ?? makeAudioContext();
       audioCtxRef.current = ctx;
+      ctx.resume?.(); // 移动端自动播放策略下需恢复 AudioContext，否则分析/播放无数据
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 512;
@@ -159,6 +180,15 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
+    // 移动端自动播放策略：AudioContext 初始为 suspended，需在用户手势中恢复；
+    // 首次 pointerdown/touchstart 后恢复上下文并重试播放远端音频。
+    const resumeAudio = () => {
+      audioCtxRef.current?.resume?.();
+      remote.current.forEach((e) => e.audio.play().catch(() => {}));
+    };
+    window.addEventListener('pointerdown', resumeAudio);
+    window.addEventListener('touchstart', resumeAudio);
+
     ws.onclose = () => {
       // cleanup（含 React StrictMode 双调用 / 主动离开 / 被踢 / 服务端拒绝进房）关闭的连接不算断网
       if (!active || selfClosed.current || kickedRef.current || rejectedRef.current) return;
@@ -186,11 +216,9 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           break;
         case 'peer-join':
           addMember({ id: m.id, name: m.name, host: m.host, isSelf: false, mute: false, speaking: false });
-          if (!cancelled) {
-            const pc = makePc(m.id);
-            pc.createOffer()
-              .then((offer) => pc.setLocalDescription(offer).then(() => send({ t: 'offer', to: m.id, from: myId, sdp: offer })));
-          }
+          // 仅创建到新成员的 PC；若本地轨道已就绪会由 onnegotiationneeded 自动发 offer，
+          // 若尚未就绪则等 startLocalMedia 补轨道后再触发，避免发出不含音频轨道的空 offer。
+          if (!cancelled) makePc(m.id);
           break;
         case 'peer-leave':
           closePc(m.id);
@@ -198,14 +226,19 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           break;
         case 'offer': {
           const pc = pcs.current.get(m.from) ?? makePc(m.from);
-          pc.setRemoteDescription(m.sdp)
+          const meta = pcMeta.current.get(m.from)!;
+          // 完美协商：无礼方在冲突（自己正在发 offer 或状态非 stable）时直接丢弃对端 offer
+          const ignore = !meta.polite && (meta.makingOffer || pc.signalingState !== 'stable');
+          if (ignore) break;
+          pc.setRemoteDescription(m.sdp) // 礼貌方会在此隐式回滚，避免 glare
             .then(() => pc.createAnswer())
-            .then((answer) => pc.setLocalDescription(answer).then(() => send({ t: 'answer', to: m.from, from: myId, sdp: answer })));
+            .then((answer) => pc.setLocalDescription(answer).then(() => send({ t: 'answer', to: m.from, from: myId, sdp: answer })))
+            .catch(() => {});
           break;
         }
         case 'answer': {
           const pc = pcs.current.get(m.from);
-          if (pc) pc.setRemoteDescription(m.sdp);
+          if (pc) pc.setRemoteDescription(m.sdp).catch(() => {});
           break;
         }
         case 'ice': {
@@ -259,18 +292,14 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           addMember({ id: myId, name: nickname, host: isHostRef.current, isSelf: true, mute: false, speaking: false });
           const ctx = makeAudioContext();
           audioCtxRef.current = ctx;
+          ctx.resume?.(); // 移动端需恢复 AudioContext，否则本地说话检测拿不到数据
           const src = ctx.createMediaStreamSource(stream);
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 512;
           src.connect(analyser);
           localAnalyser.current = analyser;
-          // 若已有连接但当时没有本地轨道，补发并重新协商
-          pcs.current.forEach((pc, peerId) => {
-            if (ensureLocalTracks(pc)) {
-              pc.createOffer()
-                .then((offer) => pc.setLocalDescription(offer).then(() => send({ t: 'offer', to: peerId, from: myId, sdp: offer })));
-            }
-          });
+          // 若已有连接但当时没有本地轨道，补加轨道会触发 onnegotiationneeded 自动重新协商
+          pcs.current.forEach((pc) => ensureLocalTracks(pc));
           startLocalSpeaking();
         })
         .catch(() => {
@@ -281,6 +310,8 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     return () => {
       active = false;
       cancelled = true;
+      window.removeEventListener('pointerdown', resumeAudio);
+      window.removeEventListener('touchstart', resumeAudio);
       window.clearTimeout(pingTimer.current);
       if (localRaf.current) cancelAnimationFrame(localRaf.current);
       remote.current.forEach((e) => cancelAnimationFrame(e.raf));

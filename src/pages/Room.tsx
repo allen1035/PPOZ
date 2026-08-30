@@ -11,7 +11,7 @@ type Props = {
 };
 
 export default function Room({ nickname, roomCode, isHost, onExit }: Props) {
-  const { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave } =
+  const { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave, isHost: amHost } =
     useRoom({ nickname, roomCode, isHost });
 
   const copyCode = () => navigator.clipboard?.writeText(roomCode).catch(() => {});
@@ -52,7 +52,7 @@ export default function Room({ nickname, roomCode, isHost, onExit }: Props) {
 
       <div className="members-grid">
         {members.map((m) => (
-          <MemberTile key={m.id} member={m} isHost={isHost} onKick={kick} />
+          <MemberTile key={m.id} member={m} isHost={amHost} onKick={kick} />
         ))}
       </div>
 
@@ -60,7 +60,7 @@ export default function Room({ nickname, roomCode, isHost, onExit }: Props) {
         micOn={micOn}
         soundOn={soundOn}
         locked={locked}
-        isHost={isHost}
+        isHost={amHost}
         onToggleMic={toggleMic}
         onToggleSound={toggleSound}
         onToggleLock={toggleLock}
