@@ -145,14 +145,15 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
 
   useEffect(() => {
     let cancelled = false;
+    let active = true; // 本 effect 实例是否仍处于挂载态（区分 cleanup 关闭与真实断网）
     const envUrl = import.meta.env.VITE_SIGNALING_URL as string | undefined;
     const url = wsUrl ?? envUrl ?? `ws://${location.hostname}:8787`;
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onclose = () => {
-      // 主动离开或被踢都已通过各自路径提示，无需再弹断线错误
-      if (selfClosed.current || kickedRef.current) return;
+      // cleanup（含 React StrictMode 双调用 / 主动离开 / 被踢）关闭的连接不算断网
+      if (!active || selfClosed.current || kickedRef.current) return;
       setError('已与房间断开连接，请返回大厅');
     };
 
@@ -211,6 +212,9 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
         case 'room-full':
           setError('房间已满（最多 6 人）');
           break;
+        case 'room-not-found':
+          setError('该房间不存在，请重新输入');
+          break;
         case 'locked':
           setError('房间已锁定，无法进入');
           break;
@@ -253,6 +257,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
       });
 
     return () => {
+      active = false;
       cancelled = true;
       window.clearTimeout(pingTimer.current);
       if (localRaf.current) cancelAnimationFrame(localRaf.current);

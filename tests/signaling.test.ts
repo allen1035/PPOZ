@@ -70,3 +70,22 @@ test('房主踢人：被踢者收到 kicked，房间其他人收到 peer-leave',
   host.close();
   member.close();
 }, 10000);
+
+test('成员加入不存在的房间：收到 room-not-found', async () => {
+  const member = await connect();
+  const p = waitFor(member, 'room-not-found');
+  send(member, { t: 'join', room: 'NOROOM', id: 'm1', name: 'M1', host: false });
+  const notFound = await p;
+  expect(notFound.t).toBe('room-not-found');
+  member.close();
+}, 10000);
+
+test('房主可创建并加入不存在的房间（不返回 room-not-found）', async () => {
+  const host = await connect();
+  const rosterP = waitFor(host, 'roster');
+  send(host, { t: 'join', room: 'NEWROOM', id: 'h1', name: 'H1', host: true });
+  const roster = await rosterP;
+  expect(roster.t).toBe('roster');
+  host.close();
+}, 10000);
+

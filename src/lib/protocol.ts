@@ -15,6 +15,7 @@ export type Msg =
   | { t: 'kick'; target: string } // 仅房主可发
   | { t: 'lock'; locked: boolean } // 房主锁房/解锁
   | { t: 'room-full' }
+  | { t: 'room-not-found' } // 非房主加入不存在的房间时返回
   | { t: 'locked' }
   | { t: 'kicked' } // 仅发给被踢者，客户端据此提示并返回大厅
   | { t: 'ping'; ts: number }

@@ -59,21 +59,31 @@ wss.on('connection', (ws: WebSocket) => {
       case 'join': {
         room = m.room;
         myId = m.id;
-        const r = getRoom(room);
-        if (r.locked) {
+        const r = rooms.get(room);
+        if (!r) {
+          // 房间不存在：只有房主可以「创建」，成员输入错误口令应得到明确提示
+          if (!m.host) {
+            send(ws, { t: 'room-not-found' });
+            ws.close();
+            return;
+          }
+          getRoom(room); // 房主建房：创建并登记房间
+        }
+        const roomRef = rooms.get(room)!;
+        if (roomRef.locked) {
           send(ws, { t: 'locked' });
           ws.close();
           return;
         }
-        if (r.members.size >= ROOM_MAX) {
+        if (roomRef.members.size >= ROOM_MAX) {
           send(ws, { t: 'room-full' });
           ws.close();
           return;
         }
         const client: Client = { ws, id: m.id, name: m.name, host: m.host, mute: false };
-        r.members.set(m.id, client);
+        roomRef.members.set(m.id, client);
         // 把当前成员列表回给新成员
-        const roster: Member[] = [...r.members.values()]
+        const roster: Member[] = [...roomRef.members.values()]
           .filter((c) => c.id !== m.id)
           .map((c) => ({ id: c.id, name: c.name, host: c.host }));
         send(ws, { t: 'roster', members: roster });

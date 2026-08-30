@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react';
-import { generateRoomCode, normalizeRoomCode, isValidRoomCode } from '../lib/roomCode';
+import { generateRoomCode, isValidRoomCode } from '../lib/roomCode';
 
 type Session = { nickname: string; roomCode: string; isHost: boolean };
 
-export default function Lobby({ onEnter }: { onEnter: (s: Session) => void }) {
-  const [nickname, setNickname] = useState('');
-  const [code, setCode] = useState('');
+type Props = {
+  nickname: string;
+  code: string;
+  onNicknameChange: (v: string) => void;
+  onCodeChange: (v: string) => void;
+  onEnter: (s: Session) => void;
+};
+
+export default function Lobby({ nickname, code, onNicknameChange, onCodeChange, onEnter }: Props) {
   const [err, setErr] = useState<string | null>(null);
 
+  // 通过邀请链接 ?r=CODE 进入时，自动回填房间口令（首次挂载）
   useEffect(() => {
     const r = new URLSearchParams(location.search).get('r');
-    if (r) setCode(normalizeRoomCode(r));
+    if (r) onCodeChange(r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const create = () => {
@@ -30,7 +38,7 @@ export default function Lobby({ onEnter }: { onEnter: (s: Session) => void }) {
       setErr('口令输入有误：请输入 6 位字母或数字');
       return;
     }
-    onEnter({ nickname: nickname.trim(), roomCode: normalizeRoomCode(code), isHost: false });
+    onEnter({ nickname: nickname.trim(), roomCode: code.trim().toUpperCase(), isHost: false });
   };
 
   return (
@@ -44,7 +52,7 @@ export default function Lobby({ onEnter }: { onEnter: (s: Session) => void }) {
             value={nickname}
             maxLength={16}
             placeholder="你的昵称"
-            onChange={(e) => setNickname(e.target.value)}
+            onChange={(e) => onNicknameChange(e.target.value)}
           />
         </div>
         <button className="btn btn-primary" onClick={create}>
@@ -58,7 +66,7 @@ export default function Lobby({ onEnter }: { onEnter: (s: Session) => void }) {
             value={code}
             maxLength={6}
             placeholder="6 位口令"
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => onCodeChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') join();
             }}
