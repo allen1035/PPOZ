@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n WEB,SIG \"vite\" \"npm:server\"",
+    "dev": "concurrently -n WEB,SIG \"vite\" \"npm:server\"",
     "web": "vite",
     "server": "tsx watch server/signaling.ts",
     "build": "tsc --noEmit && vite build",

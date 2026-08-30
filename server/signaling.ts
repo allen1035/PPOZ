@@ -31,6 +31,16 @@ function broadcast(room: string, m: Msg, exceptId?: string): void {
 }
 
 const wss = new WebSocketServer({ port: PORT });
+wss.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      `[ppoz] 端口 ${PORT} 已被占用（可能已有另一个 PPOZ 信令服务在运行）。\n` +
+        `        请先关闭占用该端口的进程，或换个端口：PORT=9000 npm run server`,
+    );
+    process.exit(1);
+  }
+  throw err;
+});
 console.log(`[ppoz] signaling server listening on ws://localhost:${PORT}`);
 
 wss.on('connection', (ws: WebSocket) => {
