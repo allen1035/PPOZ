@@ -10,7 +10,6 @@
     "cert": "node scripts/gen-cert.mjs",
     "server": "tsx watch server/signaling.ts",
     "start": "tsx server/signaling.ts",
-    "start": "tsx server/signaling.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",

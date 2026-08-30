@@ -40,6 +40,9 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
   const [locked, setLocked] = useState(false);
   const [ping, setPing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 房主身份可因「房主退出转移」而变更，故用内部状态而非仅读入参
+  const [isHostState, setIsHost] = useState(isHost);
+  const isHostRef = useRef(isHost);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pcs = useRef<Map<string, RTCPeerConnection>>(new Map());
@@ -163,7 +166,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     };
 
     ws.onopen = () => {
-      send({ t: 'join', room: roomCode, id: myId, name: nickname, host: isHost });
+      send({ t: 'join', room: roomCode, id: myId, name: nickname, host: isHostRef.current });
       const tick = () => {
         if (ws.readyState === WebSocket.OPEN) {
           send({ t: 'ping', ts: Date.now() });
@@ -231,6 +234,12 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           kickedRef.current = true;
           setError('你已被房主移出房间');
           break;
+        case 'host-changed':
+          // 房主退出后转移：本端成为新房主则获得特权
+          isHostRef.current = m.hostId === myId;
+          setIsHost(isHostRef.current);
+          patchMember(m.hostId, { host: true });
+          break;
         case 'pong':
           setPing(Date.now() - m.ts);
           break;
@@ -247,7 +256,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
         .then((stream) => {
           if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
           localStream.current = stream;
-          addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: false, speaking: false });
+          addMember({ id: myId, name: nickname, host: isHostRef.current, isSelf: true, mute: false, speaking: false });
           const ctx = makeAudioContext();
           audioCtxRef.current = ctx;
           const src = ctx.createMediaStreamSource(stream);
@@ -265,7 +274,7 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
           startLocalSpeaking();
         })
         .catch(() => {
-          if (!cancelled) addMember({ id: myId, name: nickname, host: isHost, isSelf: true, mute: true, speaking: false });
+          if (!cancelled) addMember({ id: myId, name: nickname, host: isHostRef.current, isSelf: true, mute: true, speaking: false });
         });
     };
 
@@ -309,5 +318,5 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
 
   const leave = useCallback(() => { selfClosed.current = true; wsRef.current?.close(); }, []);
 
-  return { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave, isHost };
+  return { members, micOn, soundOn, locked, ping, error, toggleMic, toggleSound, kick, toggleLock, leave, isHost: isHostState };
 }

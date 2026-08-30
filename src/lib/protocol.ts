@@ -18,6 +18,7 @@ export type Msg =
   | { t: 'room-not-found' } // 非房主加入不存在的房间时返回
   | { t: 'locked' }
   | { t: 'kicked' } // 仅发给被踢者，客户端据此提示并返回大厅
+  | { t: 'host-changed'; hostId: string } // 房主退出后按加入顺序转移房主给最早成员
   | { t: 'ping'; ts: number }
   | { t: 'pong'; ts: number };
 

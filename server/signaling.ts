@@ -155,8 +155,20 @@ wss.on('connection', (ws: WebSocket) => {
     if (!room || !myId) return;
     const r = rooms.get(room);
     if (!r) return;
+    const leaving = r.members.get(myId);
+    const wasHost = leaving?.host;
     r.members.delete(myId);
+    // 通知房内其他人移除该成员磁贴（房主退出也走这里）
     broadcast(room, { t: 'peer-leave', id: myId });
+    // 房主退出且仍有成员：按进入房间顺序把房主转移给最早加入的剩余成员
+    if (wasHost && r.members.size > 0) {
+      const nextId = r.members.keys().next().value as string | undefined;
+      if (nextId) {
+        const next = r.members.get(nextId)!;
+        next.host = true; // 服务端记为新房主，后续 roster/peer-join 即带 host:true
+        broadcast(room, { t: 'host-changed', hostId: nextId });
+      }
+    }
     if (r.members.size === 0) rooms.delete(room);
   });
 });

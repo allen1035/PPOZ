@@ -104,3 +104,34 @@ test('房主可创建并加入不存在的房间（不返回 room-not-found）',
   host.close();
 }, 10000);
 
+test('房主退出：最早加入的剩余成员收到 host-changed 并获得房主特权', async () => {
+  const host = await connect();
+  send(host, { t: 'join', room: 'HOSTXFER', id: 'h', name: 'H', host: true });
+  await waitFor(host, 'roster');
+
+  const mem1 = await connect(); // 先于 mem2 加入，应成为新房主
+  send(mem1, { t: 'join', room: 'HOSTXFER', id: 'm1', name: 'M1', host: false });
+  await waitFor(mem1, 'roster');
+
+  const mem2 = await connect();
+  send(mem2, { t: 'join', room: 'HOSTXFER', id: 'm2', name: 'M2', host: false });
+  await waitFor(mem2, 'roster');
+
+  const hostChangedP = waitFor(mem1, 'host-changed');
+  const lockP = waitFor(mem2, 'lock'); // 新房主锁房会广播给其他人(mem2)
+
+  host.close(); // 房主退出
+
+  const hc = await hostChangedP;
+  expect(hc.t).toBe('host-changed');
+  if (hc.t === 'host-changed') expect(hc.hostId).toBe('m1'); // 按加入顺序，最早成员 m1 继承房主
+
+  // m1 现在应拥有房主特权：发锁房，mem2 能收到 lock，说明服务端已认可 m1 为房主
+  send(mem1, { t: 'lock', locked: true });
+  const lock = await lockP;
+  expect(lock.t).toBe('lock');
+
+  mem1.close();
+  mem2.close();
+}, 10000);
+
