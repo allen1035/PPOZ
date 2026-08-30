@@ -148,7 +148,11 @@ export function useRoom({ nickname, roomCode, isHost, wsUrl }: Options) {
     let cancelled = false;
     let active = true; // 本 effect 实例是否仍处于挂载态（区分 cleanup 关闭与真实断网）
     const envUrl = import.meta.env.VITE_SIGNALING_URL as string | undefined;
-    const url = wsUrl ?? envUrl ?? `ws://${location.hostname}:8787`;
+    let url: string;
+    if (wsUrl) url = wsUrl;                       // 测试注入优先
+    else if (envUrl) url = envUrl;               // 生产：公网 wss 信令
+    else if (location.protocol === 'https:') url = `wss://${location.host}/ws`; // 本地 https 经 vite 同源代理
+    else url = `ws://${location.hostname}:8787`; // 本地 http 开发默认
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
