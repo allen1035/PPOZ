@@ -15,6 +15,8 @@ const https = existsSync(keyPath) && existsSync(certPath)
   : undefined;
 
 export default defineConfig({
+  // GitHub Pages 部署在子路径 /PPOZ/ 下，必须用相对 base，否则 JS/CSS 资源走绝对根路径 404 导致白屏
+  base: './',
   plugins: [react()],
   server: {
     port: 5173,
