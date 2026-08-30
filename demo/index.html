@@ -23,7 +23,6 @@
   }
   .logo { text-align: center; }
   .logo h1 { font-size: 34px; font-weight: 700; letter-spacing: 2px; color: #534AB7; }
-  .logo p { font-size: 13px; color: #8887A0; margin-top: 4px; }
   .field label { display: block; font-size: 13px; color: #5F5E7A; margin-bottom: 6px; }
   .field input {
     width: 100%; padding: 11px 14px; border: 1px solid #D9D8E8; border-radius: 10px;
@@ -55,7 +54,7 @@
   }
   .room-header .mini-logo { font-weight: 700; font-size: 18px; color: #534AB7; }
   .room-info { display: flex; align-items: center; gap: 8px; background: #F4F4F8; padding: 6px 12px; border-radius: 8px; }
-  .room-info .code { font-family: Consolas, monospace; font-size: 14px; font-weight: 600; color: #3C3489; }
+  .room-info .code { font-family: Consolas, monospace; font-size: 15px; font-weight: 600; letter-spacing: 2px; color: #3C3489; }
   .room-info .label { font-size: 12px; color: #8887A0; }
   .icon-btn {
     border: none; background: transparent; cursor: pointer; font-size: 15px;
@@ -75,7 +74,7 @@
   .member-tile {
     background: #fff; border-radius: 14px; padding: 20px 16px; position: relative;
     display: flex; align-items: center; gap: 14px; border: 2px solid transparent;
-    transition: border-color .2s, transform .2s;
+    transition: border-color .2s;
   }
   .member-tile.speaking { border-color: #1D9E75; }
   .avatar {
@@ -125,12 +124,9 @@
   .ctrl-btn .text { font-size: 12px; color: #5F5E7A; }
   .ctrl-btn.off .icon { opacity: .45; }
   .ctrl-btn.off .text { color: #A32D2D; }
-  .ctrl-btn.ptt { background: #EEEDFE; }
-  .ctrl-btn.ptt:active, .ctrl-btn.ptt.active { background: #534AB7; }
-  .ctrl-btn.ptt:active .text, .ctrl-btn.ptt.active .text { color: #fff; }
+  .ctrl-btn.leave { margin-left: 30px; }
   .ctrl-btn.leave .icon, .ctrl-btn.leave .text { color: #A32D2D; }
   .ctrl-btn.leave:hover { background: #FCEBEB; }
-  .ctrl-btn.leave { margin-left: 30px; }
 
   /* toast */
   #toast-container { position: fixed; bottom: 110px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 99; }
@@ -151,7 +147,6 @@
   <div class="lobby-card">
     <div class="logo">
       <h1>PPOZ</h1>
-      <p>朋友开黑 · 点链接就开麦</p>
     </div>
     <div class="field">
       <label>你的昵称</label>
@@ -160,7 +155,7 @@
     <button class="btn btn-primary" id="btn-create">创建房间</button>
     <div class="divider">或加入朋友的房间</div>
     <div class="join-row">
-      <input id="code-input" maxlength="10" placeholder="房间口令，如 PPOZ-7K2M">
+      <input id="code-input" maxlength="6" placeholder="6 位口令">
       <button class="btn btn-ghost" id="btn-join">加入</button>
     </div>
   </div>
@@ -172,7 +167,7 @@
     <span class="mini-logo">PPOZ</span>
     <div class="room-info">
       <span class="label">房间口令</span>
-      <span class="code" id="room-code">PPOZ-7K2M</span>
+      <span class="code" id="room-code">------</span>
     </div>
     <button class="icon-btn" id="btn-copy" title="复制邀请链接">🔗 复制邀请链接</button>
     <button class="icon-btn lock-btn" id="btn-lock" title="锁定房间，禁止新成员加入">🔓</button>
@@ -188,9 +183,6 @@
   <div class="room-footer">
     <button class="ctrl-btn" id="btn-mic">
       <span class="icon">🎤</span><span class="text">麦克风开</span>
-    </button>
-    <button class="ctrl-btn ptt" id="btn-ptt">
-      <span class="icon">🕹️</span><span class="text">按住说话</span>
     </button>
     <button class="ctrl-btn" id="btn-sound">
       <span class="icon">🎧</span><span class="text">声音开</span>
@@ -210,23 +202,24 @@
     micOn: true,
     soundOn: true,
     locked: false,
-    roomCode: "PPOZ-7K2M",
+    selfHost: true,
+    roomCode: "",
     members: [],
     timers: [],
     joinedOnce: false
   };
 
   var AVATAR_COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5", "#993556", "#BA7517"];
+  var CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
   var $ = function (id) { return document.getElementById(id); };
   var grid = $("members-grid");
 
   // ---------- 工具 ----------
   function randomCode() {
-    var chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     var s = "";
-    for (var i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
-    return "PPOZ-" + s;
+    for (var i = 0; i < 6; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    return s;
   }
 
   function toast(msg) {
@@ -247,7 +240,7 @@
     state.timers = [];
   }
 
-  // ---------- 成员渲染 ----------
+  // ---------- 成员 ----------
   function makeMember(name, isSelf, isHost, micOn) {
     var color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
     return {
@@ -261,11 +254,32 @@
     };
   }
 
+  function tileFor(id) {
+    return grid.querySelector('[data-id="' + id + '"]');
+  }
+
+  function statusHtml(m) {
+    if (m.speaking) {
+      return '<span class="bars"><i></i><i></i><i></i></span><span style="color:#1D9E75">正在说话</span>';
+    }
+    if (!m.micOn) return '<span class="mic-off">🔇 麦克风已关</span>';
+    return "空闲";
+  }
+
+  // 只更新单个成员磁贴的说话状态，不重建 DOM（避免悬停/点击被打断）
+  function updateTile(m) {
+    var tile = tileFor(m.id);
+    if (!tile) return;
+    tile.classList.toggle("speaking", !!m.speaking);
+    var st = tile.querySelector(".member-status");
+    if (st) st.innerHTML = statusHtml(m);
+  }
+
   function render() {
     grid.innerHTML = "";
     state.members.forEach(function (m) {
       var tile = document.createElement("div");
-      tile.className = "member-tile" + (m.speaking ? " speaking" : "");
+      tile.className = "member-tile";
       tile.dataset.id = m.id;
 
       var avatar = document.createElement("div");
@@ -296,20 +310,7 @@
 
       var status = document.createElement("div");
       status.className = "member-status";
-      if (m.speaking) {
-        var bars = document.createElement("span");
-        bars.className = "bars";
-        bars.innerHTML = "<i></i><i></i><i></i>";
-        status.appendChild(bars);
-        var st = document.createElement("span");
-        st.style.color = "#1D9E75";
-        st.textContent = "正在说话";
-        status.appendChild(st);
-      } else if (!m.micOn) {
-        status.innerHTML = '<span class="mic-off">🔇 麦克风已关</span>';
-      } else {
-        status.textContent = "空闲";
-      }
+      status.innerHTML = statusHtml(m);
       info.appendChild(status);
       tile.appendChild(info);
 
@@ -321,12 +322,15 @@
         muteBtn.onclick = function () { toggleRemoteMute(m); };
         tile.appendChild(muteBtn);
 
-        var kick = document.createElement("button");
-        kick.className = "kick-btn";
-        kick.title = "移出房间（仅房主）";
-        kick.textContent = "✕";
-        kick.onclick = function () { kickMember(m); };
-        tile.appendChild(kick);
+        // 踢人是房主特权：仅自己是房主时才显示
+        if (state.selfHost) {
+          var kick = document.createElement("button");
+          kick.className = "kick-btn";
+          kick.title = "移出房间（仅房主）";
+          kick.textContent = "✕";
+          kick.onclick = function () { kickMember(m); };
+          tile.appendChild(kick);
+        }
       }
 
       grid.appendChild(tile);
@@ -342,6 +346,7 @@
   }
 
   function kickMember(m) {
+    if (!state.selfHost) return;
     state.members = state.members.filter(function (x) { return x.id !== m.id; });
     render();
     toast("已将 " + m.name + " 移出房间");
@@ -350,10 +355,12 @@
   function enterRoom(asHost, roomCode) {
     var nick = $("nickname-input").value.trim() || "玩家" + Math.floor(1000 + Math.random() * 9000);
     state.nickname = nick;
+    state.selfHost = asHost;
     state.roomCode = roomCode || randomCode();
     state.locked = false;
     state.micOn = true;
     state.soundOn = true;
+    state.joinedOnce = false;
     state.members = asHost
       ? [ makeMember(nick, true, true, true) ]
       : [
@@ -386,11 +393,12 @@
   function updateMicBtn() {
     var b = $("btn-mic");
     b.classList.toggle("off", !state.micOn);
-    b.querySelector(".icon").textContent = state.micOn ? "🎤" : "🎤";
     b.querySelector(".text").textContent = state.micOn ? "麦克风开" : "麦克风关";
     var me = state.members.find(function (m) { return m.isSelf; });
-    if (me && !state.micOn) me.speaking = false;
-    render();
+    if (me) {
+      if (!state.micOn) me.speaking = false;
+      updateTile(me);
+    }
   }
 
   function updateSoundBtn() {
@@ -399,27 +407,19 @@
     b.querySelector(".text").textContent = state.soundOn ? "声音开" : "声音关";
   }
 
-  function setSelfSpeaking(on) {
-    var me = state.members.find(function (m) { return m.isSelf; });
-    if (!me) return;
-    if (!state.micOn) on = false;
-    me.speaking = on;
-    render();
-  }
-
   // ---------- 模拟行为 ----------
   function startSimulation() {
-    // 随机有人说话
+    // 随机有人说话（只更新对应磁贴，不重建列表）
     var speakTimer = setInterval(function () {
       var candidates = state.members.filter(function (m) { return m.micOn && !m.speaking && !m.isSelf; });
       if (candidates.length && Math.random() < 0.45) {
         var m = candidates[Math.floor(Math.random() * candidates.length)];
         m.speaking = true;
-        render();
+        updateTile(m);
         setTimeout(function () {
           m.speaking = false;
           var still = state.members.some(function (x) { return x.id === m.id; });
-          if (still) render();
+          if (still) updateTile(m);
         }, 900 + Math.random() * 1800);
       }
     }, 1400);
@@ -445,10 +445,14 @@
 
   // ---------- 事件绑定 ----------
   $("btn-create").onclick = function () { enterRoom(true); };
+
   $("btn-join").onclick = function () {
-    var code = $("code-input").value.trim();
-    if (!code) { toast("请输入房间口令"); return; }
-    enterRoom(false, code.toUpperCase());
+    var raw = $("code-input").value.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6}$/.test(raw)) {
+      toast("口令输入有误：请输入 6 位字母或数字");
+      return;
+    }
+    enterRoom(false, raw);
   };
   $("code-input").addEventListener("keydown", function (e) {
     if (e.key === "Enter") $("btn-join").click();
@@ -457,7 +461,7 @@
   $("btn-mic").onclick = function () {
     state.micOn = !state.micOn;
     updateMicBtn();
-    toast(state.micOn ? "麦克风已开启" : "麦克风已关闭");
+    toast(state.micOn ? "麦克风已开启" : "麦克风已关闭，其他成员将听不到你");
   };
   $("btn-sound").onclick = function () {
     state.soundOn = !state.soundOn;
@@ -486,24 +490,6 @@
     b.title = state.locked ? "房间已锁定，点击解锁" : "锁定房间，禁止新成员加入";
     toast(state.locked ? "房间已锁定，新成员无法加入" : "房间已解锁");
   };
-
-  // PTT：按住说话（鼠标 + 空格键）
-  var pttBtn = $("btn-ptt");
-  function pttDown() { pttBtn.classList.add("active"); setSelfSpeaking(true); }
-  function pttUp() { pttBtn.classList.remove("active"); setSelfSpeaking(false); }
-  pttBtn.addEventListener("mousedown", pttDown);
-  pttBtn.addEventListener("touchstart", function (e) { e.preventDefault(); pttDown(); });
-  window.addEventListener("mouseup", pttUp);
-  window.addEventListener("touchend", pttUp);
-  window.addEventListener("keydown", function (e) {
-    if (e.code === "Space" && $("screen-room").classList.contains("active")) {
-      e.preventDefault();
-      pttDown();
-    }
-  });
-  window.addEventListener("keyup", function (e) {
-    if (e.code === "Space") pttUp();
-  });
 
   // 默认昵称
   $("nickname-input").value = "玩家" + Math.floor(1000 + Math.random() * 9000);
