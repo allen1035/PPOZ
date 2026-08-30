@@ -1,0 +1,17 @@
+# Render Blueprint —— PPOZ 信令服务（零成本免费档）
+# 用法：Render 控制台 New > Blueprint，连接本 GitHub 仓库即可自动识别此文件。
+# 文档：https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: ppoz-signaling
+    runtime: node
+    plan: free
+    region: singapore # 离国内近、延迟更低；可选 oregon / frankfurt
+    branch: main
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: / # 对应 server/signaling.ts 的 http 健康检查端点
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # PORT 由 Render 自动注入，无需声明

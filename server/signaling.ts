@@ -1,5 +1,6 @@
 // PPOZ 信令服务（最小实现，零成本）
 // 仅做房间路由与消息转发，不触碰音频。生产环境可整体平移为 NestJS WebSocket 网关。
+import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Msg, Member } from '../src/lib/protocol';
 import { ROOM_MAX } from '../src/lib/protocol';
@@ -30,8 +31,22 @@ function broadcast(room: string, m: Msg, exceptId?: string): void {
   for (const c of r.members.values()) if (c.id !== exceptId) send(c.ws, m);
 }
 
-export const wss = new WebSocketServer({ port: PORT });
-wss.on('error', (err: NodeJS.ErrnoException) => {
+// 用显式 http server 承载：普通请求做健康检查（部署平台用它判断存活），
+// WebSocket 升级由下方的 WebSocketServer 处理。绑定 0.0.0.0 以便容器/平台外部可达。
+const server = http.createServer((req, res) => {
+  const path = (req.url || '/').split('?')[0];
+  if (path === '/') {
+    res.writeHead(200, { 'content-type': 'text/plain' });
+    res.end('PPOZ signaling ok');
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+export const wss = new WebSocketServer({ server });
+
+server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
     console.error(
       `[ppoz] 端口 ${PORT} 已被占用（可能已有另一个 PPOZ 信令服务在运行）。\n` +
@@ -41,7 +56,10 @@ wss.on('error', (err: NodeJS.ErrnoException) => {
   }
   throw err;
 });
-console.log(`[ppoz] signaling server listening on ws://localhost:${PORT}`);
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[ppoz] signaling server listening on ws://0.0.0.0:${PORT}`);
+});
 
 wss.on('connection', (ws: WebSocket) => {
   let room = '';

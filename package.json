@@ -7,6 +7,7 @@
     "dev": "concurrently -n WEB,SIG \"vite\" \"npm:server\"",
     "web": "vite",
     "server": "tsx watch server/signaling.ts",
+    "start": "tsx server/signaling.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -15,6 +16,7 @@
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsx": "^4.19.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
@@ -24,7 +26,6 @@
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.0",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
     "vitest": "^2.1.8"
