@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PPOZ - 游戏语音开黑（演示版）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: #F4F4F8; color: #26215C;
+    height: 100vh; overflow: hidden;
+  }
+  .screen { display: none; height: 100vh; flex-direction: column; }
+  .screen.active { display: flex; }
+
+  /* ---------- 大厅 ---------- */
+  #screen-lobby { align-items: center; justify-content: center; }
+  .lobby-card {
+    background: #fff; border-radius: 16px; padding: 40px 36px;
+    width: 380px; box-shadow: 0 2px 12px rgba(38,33,92,.08);
+    display: flex; flex-direction: column; gap: 18px;
+  }
+  .logo { text-align: center; }
+  .logo h1 { font-size: 34px; font-weight: 700; letter-spacing: 2px; color: #534AB7; }
+  .logo p { font-size: 13px; color: #8887A0; margin-top: 4px; }
+  .field label { display: block; font-size: 13px; color: #5F5E7A; margin-bottom: 6px; }
+  .field input {
+    width: 100%; padding: 11px 14px; border: 1px solid #D9D8E8; border-radius: 10px;
+    font-size: 15px; outline: none; transition: border .15s;
+  }
+  .field input:focus { border-color: #7F77DD; }
+  .btn {
+    padding: 12px; border: none; border-radius: 10px; font-size: 15px;
+    cursor: pointer; transition: filter .15s; font-family: inherit;
+  }
+  .btn:hover { filter: brightness(.96); }
+  .btn-primary { background: #534AB7; color: #fff; width: 100%; }
+  .btn-ghost { background: #EEEDFE; color: #534AB7; width: 100%; }
+  .divider { display: flex; align-items: center; gap: 10px; color: #B4B3C9; font-size: 12px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: #E4E3F0; }
+  .join-row { display: flex; gap: 10px; }
+  .join-row input { flex: 1; padding: 11px 14px; border: 1px solid #D9D8E8; border-radius: 10px; font-size: 15px; outline: none; }
+  .join-row input:focus { border-color: #7F77DD; }
+  .join-row .btn { width: 92px; padding: 11px 0; }
+  .demo-badge {
+    position: fixed; top: 14px; right: 16px; background: #FAEEDA; color: #854F0B;
+    font-size: 12px; padding: 5px 12px; border-radius: 20px; border: 1px solid #FAC775;
+  }
+
+  /* ---------- 房间 ---------- */
+  .room-header {
+    background: #fff; padding: 14px 22px; display: flex; align-items: center;
+    gap: 14px; border-bottom: 1px solid #E9E8F2; flex-shrink: 0;
+  }
+  .room-header .mini-logo { font-weight: 700; font-size: 18px; color: #534AB7; }
+  .room-info { display: flex; align-items: center; gap: 8px; background: #F4F4F8; padding: 6px 12px; border-radius: 8px; }
+  .room-info .code { font-family: Consolas, monospace; font-size: 14px; font-weight: 600; color: #3C3489; }
+  .room-info .label { font-size: 12px; color: #8887A0; }
+  .icon-btn {
+    border: none; background: transparent; cursor: pointer; font-size: 15px;
+    padding: 7px 10px; border-radius: 8px; transition: background .15s;
+  }
+  .icon-btn:hover { background: #F1F0F8; }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .ping { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #0F6E56; background: #E1F5EE; padding: 6px 12px; border-radius: 20px; }
+  .ping .dot { width: 8px; height: 8px; border-radius: 50%; background: #1D9E75; }
+  .lock-btn.locked { background: #FAEEDA; }
+
+  .members-area { flex: 1; overflow-y: auto; padding: 26px; }
+  .members-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: 16px; max-width: 980px; margin: 0 auto;
+  }
+  .member-tile {
+    background: #fff; border-radius: 14px; padding: 20px 16px; position: relative;
+    display: flex; align-items: center; gap: 14px; border: 2px solid transparent;
+    transition: border-color .2s, transform .2s;
+  }
+  .member-tile.speaking { border-color: #1D9E75; }
+  .avatar {
+    width: 52px; height: 52px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 20px; font-weight: 600; position: relative;
+  }
+  .member-tile.speaking .avatar { box-shadow: 0 0 0 3px #9FE1CB; }
+  .member-info { flex: 1; min-width: 0; }
+  .member-name { font-size: 15px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+  .member-name .name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .you-tag { font-size: 11px; background: #EEEDFE; color: #534AB7; padding: 1px 7px; border-radius: 10px; flex-shrink: 0; }
+  .host-tag { font-size: 11px; background: #FAEEDA; color: #854F0B; padding: 1px 7px; border-radius: 10px; flex-shrink: 0; }
+  .member-status { font-size: 12px; color: #B4B3C9; margin-top: 4px; display: flex; align-items: center; gap: 6px; height: 16px; }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 12px; }
+  .bars i { width: 3px; background: #1D9E75; border-radius: 1px; animation: wave .7s infinite ease-in-out; }
+  .bars i:nth-child(1) { height: 6px; animation-delay: 0s; }
+  .bars i:nth-child(2) { height: 11px; animation-delay: .15s; }
+  .bars i:nth-child(3) { height: 8px; animation-delay: .3s; }
+  @keyframes wave { 0%,100% { transform: scaleY(.4);} 50% { transform: scaleY(1);} }
+  .mic-off { color: #A32D2D; }
+  .mute-btn {
+    border: none; background: #F4F4F8; border-radius: 8px; cursor: pointer;
+    font-size: 13px; padding: 7px; flex-shrink: 0; transition: background .15s;
+  }
+  .mute-btn:hover { background: #E9E8F2; }
+  .mute-btn.muted { background: #FCEBEB; }
+  .kick-btn {
+    position: absolute; top: 8px; right: 10px; border: none; background: transparent;
+    color: #C9C8D8; cursor: pointer; font-size: 16px; line-height: 1; padding: 4px;
+    border-radius: 6px; display: none;
+  }
+  .member-tile:hover .kick-btn { display: block; }
+  .kick-btn:hover { color: #A32D2D; background: #FCEBEB; }
+
+  .room-footer {
+    background: #fff; padding: 16px 22px; display: flex; justify-content: center;
+    gap: 14px; border-top: 1px solid #E9E8F2; flex-shrink: 0;
+  }
+  .ctrl-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 5px;
+    border: none; background: transparent; cursor: pointer; font-family: inherit;
+    padding: 8px 18px; border-radius: 12px; transition: background .15s; min-width: 86px;
+  }
+  .ctrl-btn:hover { background: #F4F4F8; }
+  .ctrl-btn .icon { font-size: 22px; }
+  .ctrl-btn .text { font-size: 12px; color: #5F5E7A; }
+  .ctrl-btn.off .icon { opacity: .45; }
+  .ctrl-btn.off .text { color: #A32D2D; }
+  .ctrl-btn.ptt { background: #EEEDFE; }
+  .ctrl-btn.ptt:active, .ctrl-btn.ptt.active { background: #534AB7; }
+  .ctrl-btn.ptt:active .text, .ctrl-btn.ptt.active .text { color: #fff; }
+  .ctrl-btn.leave .icon, .ctrl-btn.leave .text { color: #A32D2D; }
+  .ctrl-btn.leave:hover { background: #FCEBEB; }
+  .ctrl-btn.leave { margin-left: 30px; }
+
+  /* toast */
+  #toast-container { position: fixed; bottom: 110px; right: 24px; display: flex; flex-direction: column; gap: 10px; z-index: 99; }
+  .toast {
+    background: #26215C; color: #fff; padding: 11px 18px; border-radius: 10px;
+    font-size: 13px; box-shadow: 0 4px 14px rgba(38,33,92,.25);
+    animation: slidein .25s ease; display: flex; align-items: center; gap: 8px;
+  }
+  @keyframes slidein { from { transform: translateX(30px); opacity: 0;} to { transform: none; opacity: 1;} }
+</style>
+</head>
+<body>
+
+<div class="demo-badge">演示版 · 数据为模拟</div>
+
+<!-- 大厅 -->
+<div class="screen active" id="screen-lobby">
+  <div class="lobby-card">
+    <div class="logo">
+      <h1>PPOZ</h1>
+      <p>朋友开黑 · 点链接就开麦</p>
+    </div>
+    <div class="field">
+      <label>你的昵称</label>
+      <input id="nickname-input" maxlength="12" placeholder="输入昵称">
+    </div>
+    <button class="btn btn-primary" id="btn-create">创建房间</button>
+    <div class="divider">或加入朋友的房间</div>
+    <div class="join-row">
+      <input id="code-input" maxlength="10" placeholder="房间口令，如 PPOZ-7K2M">
+      <button class="btn btn-ghost" id="btn-join">加入</button>
+    </div>
+  </div>
+</div>
+
+<!-- 房间 -->
+<div class="screen" id="screen-room">
+  <div class="room-header">
+    <span class="mini-logo">PPOZ</span>
+    <div class="room-info">
+      <span class="label">房间口令</span>
+      <span class="code" id="room-code">PPOZ-7K2M</span>
+    </div>
+    <button class="icon-btn" id="btn-copy" title="复制邀请链接">🔗 复制邀请链接</button>
+    <button class="icon-btn lock-btn" id="btn-lock" title="锁定房间，禁止新成员加入">🔓</button>
+    <div class="header-right">
+      <div class="ping"><span class="dot"></span><span id="ping-value">23ms</span></div>
+    </div>
+  </div>
+
+  <div class="members-area">
+    <div class="members-grid" id="members-grid"></div>
+  </div>
+
+  <div class="room-footer">
+    <button class="ctrl-btn" id="btn-mic">
+      <span class="icon">🎤</span><span class="text">麦克风开</span>
+    </button>
+    <button class="ctrl-btn ptt" id="btn-ptt">
+      <span class="icon">🕹️</span><span class="text">按住说话</span>
+    </button>
+    <button class="ctrl-btn" id="btn-sound">
+      <span class="icon">🎧</span><span class="text">声音开</span>
+    </button>
+    <button class="ctrl-btn leave" id="btn-leave">
+      <span class="icon">🚪</span><span class="text">离开房间</span>
+    </button>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+(function () {
+  var state = {
+    nickname: "",
+    micOn: true,
+    soundOn: true,
+    locked: false,
+    roomCode: "PPOZ-7K2M",
+    members: [],
+    timers: [],
+    joinedOnce: false
+  };
+
+  var AVATAR_COLORS = ["#534AB7", "#1D9E75", "#D85A30", "#185FA5", "#993556", "#BA7517"];
+
+  var $ = function (id) { return document.getElementById(id); };
+  var grid = $("members-grid");
+
+  // ---------- 工具 ----------
+  function randomCode() {
+    var chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    var s = "";
+    for (var i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return "PPOZ-" + s;
+  }
+
+  function toast(msg) {
+    var el = document.createElement("div");
+    el.className = "toast";
+    el.textContent = msg;
+    $("toast-container").appendChild(el);
+    setTimeout(function () {
+      el.style.transition = "opacity .3s";
+      el.style.opacity = "0";
+      setTimeout(function () { el.remove(); }, 300);
+    }, 2600);
+  }
+
+  function clearTimers() {
+    state.timers.forEach(clearInterval);
+    state.timers.forEach(clearTimeout);
+    state.timers = [];
+  }
+
+  // ---------- 成员渲染 ----------
+  function makeMember(name, isSelf, isHost, micOn) {
+    var color = AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+    return {
+      id: "m" + Math.random().toString(36).slice(2, 8),
+      name: name,
+      isSelf: isSelf,
+      isHost: isHost,
+      micOn: micOn !== false,
+      speaking: false,
+      color: color
+    };
+  }
+
+  function render() {
+    grid.innerHTML = "";
+    state.members.forEach(function (m) {
+      var tile = document.createElement("div");
+      tile.className = "member-tile" + (m.speaking ? " speaking" : "");
+      tile.dataset.id = m.id;
+
+      var avatar = document.createElement("div");
+      avatar.className = "avatar";
+      avatar.style.background = m.color;
+      avatar.textContent = m.name.charAt(0).toUpperCase();
+      tile.appendChild(avatar);
+
+      var info = document.createElement("div");
+      info.className = "member-info";
+      var nameRow = document.createElement("div");
+      nameRow.className = "member-name";
+      var nameText = document.createElement("span");
+      nameText.className = "name-text";
+      nameText.textContent = m.name;
+      nameRow.appendChild(nameText);
+      if (m.isSelf) {
+        var t = document.createElement("span");
+        t.className = "you-tag"; t.textContent = "你";
+        nameRow.appendChild(t);
+      }
+      if (m.isHost) {
+        var h = document.createElement("span");
+        h.className = "host-tag"; h.textContent = "房主";
+        nameRow.appendChild(h);
+      }
+      info.appendChild(nameRow);
+
+      var status = document.createElement("div");
+      status.className = "member-status";
+      if (m.speaking) {
+        var bars = document.createElement("span");
+        bars.className = "bars";
+        bars.innerHTML = "<i></i><i></i><i></i>";
+        status.appendChild(bars);
+        var st = document.createElement("span");
+        st.style.color = "#1D9E75";
+        st.textContent = "正在说话";
+        status.appendChild(st);
+      } else if (!m.micOn) {
+        status.innerHTML = '<span class="mic-off">🔇 麦克风已关</span>';
+      } else {
+        status.textContent = "空闲";
+      }
+      info.appendChild(status);
+      tile.appendChild(info);
+
+      if (!m.isSelf) {
+        var muteBtn = document.createElement("button");
+        muteBtn.className = "mute-btn" + (m.micOn ? "" : " muted");
+        muteBtn.title = m.micOn ? "将 TA 静音（仅自己听不到）" : "取消静音";
+        muteBtn.textContent = m.micOn ? "🔊" : "🔇";
+        muteBtn.onclick = function () { toggleRemoteMute(m); };
+        tile.appendChild(muteBtn);
+
+        var kick = document.createElement("button");
+        kick.className = "kick-btn";
+        kick.title = "移出房间（仅房主）";
+        kick.textContent = "✕";
+        kick.onclick = function () { kickMember(m); };
+        tile.appendChild(kick);
+      }
+
+      grid.appendChild(tile);
+    });
+  }
+
+  // ---------- 操作 ----------
+  function toggleRemoteMute(m) {
+    m.micOn = !m.micOn;
+    if (!m.micOn) m.speaking = false;
+    render();
+    toast(m.micOn ? "已取消对 " + m.name + " 的静音" : "已静音 " + m.name);
+  }
+
+  function kickMember(m) {
+    state.members = state.members.filter(function (x) { return x.id !== m.id; });
+    render();
+    toast("已将 " + m.name + " 移出房间");
+  }
+
+  function enterRoom(asHost, roomCode) {
+    var nick = $("nickname-input").value.trim() || "玩家" + Math.floor(1000 + Math.random() * 9000);
+    state.nickname = nick;
+    state.roomCode = roomCode || randomCode();
+    state.locked = false;
+    state.micOn = true;
+    state.soundOn = true;
+    state.members = asHost
+      ? [ makeMember(nick, true, true, true) ]
+      : [
+          makeMember("凯子", false, true, true),
+          makeMember("小北", false, false, false),
+          makeMember("阿豪", false, false, true),
+          makeMember(nick, true, false, true)
+        ];
+
+    $("room-code").textContent = state.roomCode;
+    $("btn-lock").textContent = "🔓";
+    $("btn-lock").classList.remove("locked");
+    updateMicBtn();
+    updateSoundBtn();
+
+    $("screen-lobby").classList.remove("active");
+    $("screen-room").classList.add("active");
+    render();
+    toast(asHost ? "房间已创建，把口令发给朋友吧" : "已加入房间 " + state.roomCode);
+    startSimulation();
+  }
+
+  function leaveRoom() {
+    clearTimers();
+    $("screen-room").classList.remove("active");
+    $("screen-lobby").classList.add("active");
+    toast("已离开房间");
+  }
+
+  function updateMicBtn() {
+    var b = $("btn-mic");
+    b.classList.toggle("off", !state.micOn);
+    b.querySelector(".icon").textContent = state.micOn ? "🎤" : "🎤";
+    b.querySelector(".text").textContent = state.micOn ? "麦克风开" : "麦克风关";
+    var me = state.members.find(function (m) { return m.isSelf; });
+    if (me && !state.micOn) me.speaking = false;
+    render();
+  }
+
+  function updateSoundBtn() {
+    var b = $("btn-sound");
+    b.classList.toggle("off", !state.soundOn);
+    b.querySelector(".text").textContent = state.soundOn ? "声音开" : "声音关";
+  }
+
+  function setSelfSpeaking(on) {
+    var me = state.members.find(function (m) { return m.isSelf; });
+    if (!me) return;
+    if (!state.micOn) on = false;
+    me.speaking = on;
+    render();
+  }
+
+  // ---------- 模拟行为 ----------
+  function startSimulation() {
+    // 随机有人说话
+    var speakTimer = setInterval(function () {
+      var candidates = state.members.filter(function (m) { return m.micOn && !m.speaking && !m.isSelf; });
+      if (candidates.length && Math.random() < 0.45) {
+        var m = candidates[Math.floor(Math.random() * candidates.length)];
+        m.speaking = true;
+        render();
+        setTimeout(function () {
+          m.speaking = false;
+          var still = state.members.some(function (x) { return x.id === m.id; });
+          if (still) render();
+        }, 900 + Math.random() * 1800);
+      }
+    }, 1400);
+
+    // ping 波动
+    var pingTimer = setInterval(function () {
+      var p = 18 + Math.floor(Math.random() * 22);
+      $("ping-value").textContent = p + "ms";
+    }, 2000);
+
+    // 8 秒后一位朋友加入（仅一次）
+    var joinTimer = setTimeout(function () {
+      if (!state.joinedOnce && !state.locked) {
+        state.joinedOnce = true;
+        state.members.push(makeMember("阿伟", false, false, true));
+        render();
+        toast("阿伟 通过口令加入了房间");
+      }
+    }, 8000);
+
+    state.timers.push(speakTimer, pingTimer, joinTimer);
+  }
+
+  // ---------- 事件绑定 ----------
+  $("btn-create").onclick = function () { enterRoom(true); };
+  $("btn-join").onclick = function () {
+    var code = $("code-input").value.trim();
+    if (!code) { toast("请输入房间口令"); return; }
+    enterRoom(false, code.toUpperCase());
+  };
+  $("code-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") $("btn-join").click();
+  });
+
+  $("btn-mic").onclick = function () {
+    state.micOn = !state.micOn;
+    updateMicBtn();
+    toast(state.micOn ? "麦克风已开启" : "麦克风已关闭");
+  };
+  $("btn-sound").onclick = function () {
+    state.soundOn = !state.soundOn;
+    updateSoundBtn();
+    toast(state.soundOn ? "声音已开启" : "声音已关闭（你将听不到任何人）");
+  };
+  $("btn-leave").onclick = leaveRoom;
+
+  $("btn-copy").onclick = function () {
+    var link = "https://ppoz.app/r/" + state.roomCode;
+    var done = function () { toast("邀请链接已复制：" + link); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(done, function () {
+        toast("邀请链接：" + link);
+      });
+    } else {
+      toast("邀请链接：" + link);
+    }
+  };
+
+  $("btn-lock").onclick = function () {
+    state.locked = !state.locked;
+    var b = $("btn-lock");
+    b.textContent = state.locked ? "🔒" : "🔓";
+    b.classList.toggle("locked", state.locked);
+    b.title = state.locked ? "房间已锁定，点击解锁" : "锁定房间，禁止新成员加入";
+    toast(state.locked ? "房间已锁定，新成员无法加入" : "房间已解锁");
+  };
+
+  // PTT：按住说话（鼠标 + 空格键）
+  var pttBtn = $("btn-ptt");
+  function pttDown() { pttBtn.classList.add("active"); setSelfSpeaking(true); }
+  function pttUp() { pttBtn.classList.remove("active"); setSelfSpeaking(false); }
+  pttBtn.addEventListener("mousedown", pttDown);
+  pttBtn.addEventListener("touchstart", function (e) { e.preventDefault(); pttDown(); });
+  window.addEventListener("mouseup", pttUp);
+  window.addEventListener("touchend", pttUp);
+  window.addEventListener("keydown", function (e) {
+    if (e.code === "Space" && $("screen-room").classList.contains("active")) {
+      e.preventDefault();
+      pttDown();
+    }
+  });
+  window.addEventListener("keyup", function (e) {
+    if (e.code === "Space") pttUp();
+  });
+
+  // 默认昵称
+  $("nickname-input").value = "玩家" + Math.floor(1000 + Math.random() * 9000);
+})();
+</script>
+</body>
+</html>
